@@ -3,22 +3,27 @@ import pygame
 chessboard = [[None for i in range(8)] for i in range(8)]
 turn_cnt = 0
 turn_color = 'white'
+
 selected_role = None
 selected_piece = None
 x = None
 y = None
+
 in_check = False
 game_over = False
 
+can_castle = True
+en_passant_pos = None
+en_passant_timer = 0
+
 # Set up the Piece class
 class Piece:
-    def __init__(self, role, color, pos, moved, sprite, checked):
+    def __init__(self, role, color, pos, moved, sprite):
             self.role = role
             self.color = color
             self.pos = pos
             self.moved = False
             self.sprite = sprite
-            self.checked = False
 
     def move(self, moved_pos):
         chessboard[self.pos[0]][self.pos[1]] = None
@@ -31,8 +36,8 @@ class Piece:
 wpsprite = pygame.image.load("white-pawn.png")
 bpsprite = pygame.image.load("black-pawn.png")
 class Pawn(Piece):
-    def __init__(self, color, pos, moved, sprite, checked):
-            super().__init__('pawn', color, pos, moved, sprite, checked)
+    def __init__(self, color, pos, moved, sprite):
+            super().__init__('pawn', color, pos, moved, sprite)
 
     def valid_moves(self):
         valid = []
@@ -42,7 +47,7 @@ class Pawn(Piece):
             if on_board(self.pos[0] - 1, self.pos[1]):
                 if (chessboard[self.pos[0] - 1][self.pos[1]] is None):
                     valid.append((self.pos[0] - 1, self.pos[1]))
-                    if (chessboard[self.pos[0] - 2][self.pos[1]] is None) and (self.moved == False):
+                    if (chessboard[self.pos[0] - 2][self.pos[1]] is None) and (not self.moved):
                         valid.append((self.pos[0] - 2, self.pos[1]))
 
             # Unlike other pieces, pawns can capture squares where they can not normally move (diagonal, adjacent, in front)
@@ -57,7 +62,7 @@ class Pawn(Piece):
             if on_board(self.pos[0] + 1, self.pos[1]):
                 if (chessboard[self.pos[0] + 1][self.pos[1]] is None):
                     valid.append((self.pos[0] + 1, self.pos[1]))
-                    if (chessboard[self.pos[0] + 2][self.pos[1]] is None) and (self.moved == False):
+                    if (chessboard[self.pos[0] + 2][self.pos[1]] is None) and (not self.moved):
                         valid.append((self.pos[0] + 2, self.pos[1]))
 
             if on_board(self.pos[0] + 1, self.pos[1] - 1):
@@ -66,6 +71,20 @@ class Pawn(Piece):
             if on_board(self.pos[0] + 1, self.pos[1] + 1):
                 if (chessboard[self.pos[0] + 1][self.pos[1] + 1] is not None and chessboard[self.pos[0] + 1][self.pos[1] + 1].color == 'white'):
                     valid.append((self.pos[0] + 1, self.pos[1] + 1))
+
+        # En passant check
+        if en_passant_timer == 1:
+            if chessboard[self.pos[0]][self.pos[1]].color == 'white':
+                if (self.pos[0] - 1, self.pos[1] - 1) == en_passant_pos:
+                    valid.append((self.pos[0] - 1, self.pos[1] - 1))
+                elif (self.pos[0] - 1, self.pos[1] + 1) == en_passant_pos:
+                    valid.append((self.pos[0] - 1, self.pos[1] + 1))
+            else:
+                if (self.pos[0] + 1, self.pos[1] - 1) == en_passant_pos:
+                    valid.append((self.pos[0] + 1, self.pos[1] - 1))
+                elif (self.pos[0] + 1, self.pos[1] + 1) == en_passant_pos:
+                    valid.append((self.pos[0] + 1, self.pos[1] + 1))
+            
 
         return valid
 
@@ -102,8 +121,8 @@ class Pawn(Piece):
 wrsprite = pygame.image.load("white-rook.png")
 brsprite = pygame.image.load("black-rook.png")
 class Rook(Piece):
-    def __init__(self, color, pos, moved, sprite, checked):
-            super().__init__('rook', color, pos, moved, sprite, checked)
+    def __init__(self, color, pos, moved, sprite):
+            super().__init__('rook', color, pos, moved, sprite)
 
     def valid_moves(self):
         valid = []
@@ -135,8 +154,8 @@ class Rook(Piece):
 wbsprite = pygame.image.load("white-bishop.png")
 bbsprite = pygame.image.load("black-bishop.png")
 class Bishop(Piece):
-    def __init__(self, color, pos, moved, sprite, checked):
-            super().__init__('bishop', color, pos, moved, sprite, checked)
+    def __init__(self, color, pos, moved, sprite):
+            super().__init__('bishop', color, pos, moved, sprite)
 
     def valid_moves(self):
         valid = []
@@ -168,8 +187,8 @@ class Bishop(Piece):
 wknsprite = pygame.image.load("white-knight.png")
 bknsprite = pygame.image.load("black-knight.png")
 class Knight(Piece):
-    def __init__(self, color, pos, moved, sprite, checked):
-            super().__init__('knight', color, pos, moved, sprite, checked)
+    def __init__(self, color, pos, moved, sprite):
+            super().__init__('knight', color, pos, moved, sprite)
 
     def valid_moves(self):
         valid = []
@@ -195,8 +214,8 @@ class Knight(Piece):
 wksprite = pygame.image.load("white-king.png")
 bksprite = pygame.image.load("black-king.png")
 class King(Piece):
-    def __init__(self, color, pos, moved, sprite, checked):
-            super().__init__('king', color, pos, moved, sprite, checked)
+    def __init__(self, color, pos, moved, sprite):
+            super().__init__('king', color, pos, moved, sprite)
 
     def contests_squares(self):
         contests = []
@@ -217,6 +236,30 @@ class King(Piece):
         contests = King.contests_squares(self)
         
         valid = []
+
+        # Special movement rule - Castling
+        if not self.moved and can_castle:
+            if self.color == 'white':
+                
+                # Short castling
+                if chessboard[7][5] is None and chessboard[7][6] is None and chessboard[7][7] is not None:
+                    if chessboard[7][7].role == 'rook' and chessboard[7][7].color == 'white':
+                        valid.append((7, 6))
+                        
+                # Long castling
+                if chessboard[7][1] is None and chessboard[7][2] is None and chessboard[7][3] is None and chessboard[7][0] is not None:
+                    if chessboard[7][0].role == 'rook' and chessboard[7][0].color == 'white':
+                        valid.append((7, 1))
+                
+            # Same code but for the black king
+            elif self.color == 'black':
+                if chessboard[0][5] is None and chessboard[0][6] is None and chessboard[0][7] is not None:
+                    if chessboard[0][7].role == 'rook' and chessboard[0][7].color == 'black':
+                        valid.append((0, 6))
+
+                if chessboard[0][1] is None and chessboard[0][2] is None and chessboard[0][3] is None and chessboard[0][0] is not None:
+                    if chessboard[0][0].role == 'rook' and chessboard[7][0].color == 'white':
+                        valid.append((0, 1))
         
         for i in contests:
             if not contested[i[0]][i[1]]:
@@ -231,8 +274,8 @@ class King(Piece):
 wqsprite = pygame.image.load("white-queen.png")
 bqsprite = pygame.image.load("black-queen.png")
 class Queen(Piece):
-    def __init__(self, color, pos, moved, sprite, checked):
-            super().__init__('queen', color, pos, moved, sprite, checked)
+    def __init__(self, color, pos, moved, sprite):
+            super().__init__('queen', color, pos, moved, sprite)
 
     def valid_moves(self):
         valid = []
@@ -269,28 +312,28 @@ def original_state():
     chessboard = [[None for i in range(8)] for i in range(8)]
     
     for i in range(8):
-        chessboard[1][i] = Pawn('black', (1, i), False, bpsprite, False)
-        chessboard[6][i] = Pawn('white', (6, i), False, wpsprite, False)
+        chessboard[1][i] = Pawn('black', (1, i), False, bpsprite)
+        chessboard[6][i] = Pawn('white', (6, i), False, wpsprite)
 
-    chessboard[0][0] = Rook('black', (0, 0), False, brsprite, False)
-    chessboard[0][7] = Rook('black', (0, 7), False, brsprite, False)
-    chessboard[7][0] = Rook('white', (7, 0), False, wrsprite, False)
-    chessboard[7][7] = Rook('white', (7, 7), False, wrsprite, False)
+    chessboard[0][0] = Rook('black', (0, 0), False, brsprite)
+    chessboard[0][7] = Rook('black', (0, 7), False, brsprite)
+    chessboard[7][0] = Rook('white', (7, 0), False, wrsprite)
+    chessboard[7][7] = Rook('white', (7, 7), False, wrsprite)
 
-    chessboard[0][1] = Knight('black', (0, 1), False, bknsprite, False)
-    chessboard[0][6] = Knight('black', (0, 6), False, bknsprite, False)
-    chessboard[7][1] = Knight('white', (7, 1), False, wknsprite, False)
-    chessboard[7][6] = Knight('white', (7, 6), False, wknsprite, False)
+    chessboard[0][1] = Knight('black', (0, 1), False, bknsprite)
+    chessboard[0][6] = Knight('black', (0, 6), False, bknsprite)
+    chessboard[7][1] = Knight('white', (7, 1), False, wknsprite)
+    chessboard[7][6] = Knight('white', (7, 6), False, wknsprite)
 
-    chessboard[0][2] = Bishop('black', (0, 2), False, bbsprite, False)
-    chessboard[0][5] = Bishop('black', (0, 5), False, bbsprite, False)
-    chessboard[7][2] = Bishop('white', (7, 2), False, wbsprite, False)
-    chessboard[7][5] = Bishop('white', (7, 5), False, wbsprite, False)
+    chessboard[0][2] = Bishop('black', (0, 2), False, bbsprite)
+    chessboard[0][5] = Bishop('black', (0, 5), False, bbsprite)
+    chessboard[7][2] = Bishop('white', (7, 2), False, wbsprite)
+    chessboard[7][5] = Bishop('white', (7, 5), False, wbsprite)
 
-    chessboard[0][3] = Queen('black', (0, 3), False, bqsprite, False)
-    chessboard[0][4] = King('black', (0, 4), False, bksprite, False)
-    chessboard[7][3] = Queen('white', (7, 3), False, wqsprite, False)
-    chessboard[7][4] = King('white', (7, 4), False, wksprite, False)
+    chessboard[0][3] = Queen('black', (0, 3), False, bqsprite)
+    chessboard[0][4] = King('black', (0, 4), False, bksprite)
+    chessboard[7][3] = Queen('white', (7, 3), False, wqsprite)
+    chessboard[7][4] = King('white', (7, 4), False, wksprite)
 
     game_over = False
     in_check = False
@@ -311,13 +354,14 @@ square_size = 100
 # Set up the colors
 white = (212, 238, 188)
 black = (118, 164, 83)
-w_highlight = (212, 243, 255)
-b_highlight = (109, 158, 191)
-w_selected = (241, 244, 201)
+w_highlight = (139, 161, 119)
+b_highlight = (75, 97, 58)
+w_selected = (243, 245, 218)
 b_selected = (180, 203, 89)
-attack = (38, 128, 189)
-wrong_turn = (79, 79, 79)
-check_red = (255, 0, 0)
+w_invalid_move = (222, 96, 87)
+b_invalid_move = (173, 65, 57)
+invalid_turn = (110, 110, 110)
+attack = (255, 77, 77)
 
 # Initialize Pygame
 pygame.init()
@@ -330,6 +374,10 @@ font = pygame.font.Font(None, font_size)
 game_display = pygame.display.set_mode((window_width, window_height))
 pygame.display.set_caption("Chessboard")
 
+"""
+Visualising and displaying the board on screen
+"""
+
 # Function for displaying a square
 def draw_square(row, col, white_color, black_color):
     x_pos = col * square_size
@@ -339,6 +387,15 @@ def draw_square(row, col, white_color, black_color):
     else:
         pygame.draw.rect(game_display, black_color, [x_pos, y_pos, square_size, square_size])
 
+def draw_circle(row, col, white_color, black_color):
+    x_pos = square_size * col + 50
+    y_pos = square_size * row + 50
+    radius = square_size // 5
+    if (row + col) % 2 == 0:
+        pygame.draw.circle(game_display, white_color, (x_pos, y_pos), radius)
+    else:
+        pygame.draw.circle(game_display, black_color, (x_pos, y_pos), radius)
+
 # Highlighting valid moves
 def highlight_moves():
     if selected_piece is not None and selected_piece.color == turn_color:
@@ -347,13 +404,16 @@ def highlight_moves():
         for row in range(board_height):
             for col in range(board_width):
                 if on_board(row, col):
-                    if (selected_piece.role != 'pawn' and selected_piece.role != 'king' and (row, col) in moves[0]) \
+                    if ((selected_piece.role != 'pawn' and selected_piece.role != 'king' and (row, col) in moves[0]) \
                     or (selected_piece.role == 'pawn' and (row, col) in moves) \
-                    or (selected_piece.role == 'king' and (row, col) in moves):
-                        if chessboard[row][col] is not None and chessboard[row][col].color != selected_piece.color:
-                            draw_square(row, col, attack, attack)
-                        else:
-                            draw_square(row, col, w_highlight, b_highlight)
+                    or (selected_piece.role == 'king' and (row, col) in moves)):
+                        if not would_check(row, col, selected_piece.pos[0], selected_piece.pos[1], selected_piece.moved, chessboard):
+                            if chessboard[row][col] is not None and chessboard[row][col].color != selected_piece.color:
+                                draw_square(row, col, attack, attack)
+                            else:
+                                draw_circle(row, col, w_highlight, b_highlight)
+                        #else:
+                            #draw_circle(row, col, w_invalid_move, b_invalid_move)
                     elif (row, col) == (x, y):
                         draw_square(row, col, w_selected, b_selected)
 
@@ -362,7 +422,7 @@ def highlight_moves():
         for row in range(board_height):
             for col in range(board_width):
                 if chessboard[row][col] is selected_piece:
-                    draw_square(row, col, wrong_turn, wrong_turn)
+                    draw_square(row, col, invalid_turn, invalid_turn)
 
     # Highlights king in red if under check
     elif in_check:
@@ -370,7 +430,7 @@ def highlight_moves():
             for col in range(board_width):
                 if chessboard[row][col] is not None:
                     if chessboard[row][col].role == 'king' and chessboard[row][col].color == turn_color:
-                        draw_square(row, col, check_red, check_red)
+                        draw_square(row, col, attack, attack)
     
 
 # Visualising the chessboard
@@ -407,6 +467,10 @@ def on_board(xcoord, ycoord):
         return True
     else:
         return False
+
+"""
+Check/Checkmate/Stalemate conditions
+"""
 
 # Maps which squares can be attacked by the opponent
 def find_contested():
@@ -449,9 +513,6 @@ def is_check(x, y, board):
                     # If the king's square can be attacked (is True in contested), the king is in check
                     if contested[row][col]:
                         in_check = True
-                        board[row][col].checked = in_check
-                    else:
-                        board[row][col].checked = in_check
 
     return in_check
 
@@ -519,9 +580,92 @@ def legal_moves(last_check_status):
     
     return piece_cnt
 
+"""
+Special moves implementation
+"""
+# 1. Castling
+# This function moves the rook when the king moves to a castling square
+def castle():
+    if (x, y) == (7, 6):
+        chessboard[7][7].move((7, 5))
+    elif (x, y) == (7, 1):
+        chessboard[7][0].move((7, 2))
+    elif (x, y) == (0, 6):
+        chessboard[0][7].move((0, 5))
+    elif (x, y) == (0, 1):
+        chessboard[0][0].move((0, 2))
+
+# 2. En passant
+# This function checks whether en passant requirements are met
+def en_passant_validity():
+    global en_passant_pos, en_passant_timer
+
+    x, y = selected_piece.pos
+    
+    if selected_piece.color == 'white' and x == 4:
+        en_passant_pos = (5, y)
+        en_passant_timer = 0
+
+    elif selected_piece.color == 'black' and x == 3:
+        en_passant_pos = (2, y)
+        en_passant_timer = 0
+
+# This function captures the opponent pawn when an en passant move is made
+def en_passant():
+    global en_passant_pos, chessboard
+
+    if selected_piece.color == 'white':
+        chessboard[en_passant_pos[0] + 1][en_passant_pos[1]] = None
+    else:
+        chessboard[en_passant_pos[0] - 1][en_passant_pos[1]] = None
+
+# 3. Promotion
+# This function prompts the user to enter what piece they would like to promote their pawn to
+def get_user_promotion():
+    print("Pawn promoted!")
+    choice = input(("Choose a piece to promote to (Queen, Rook, Knight, Bishop): "))
+    
+    while not (choice == "Queen" or choice == "Rook" or choice == "Knight" or choice == "Bishop"):
+        print("Invalid input!")
+        choice = input(("Choose a piece to promote to (Queen, Rook, Knight, Bishop): "))
+
+    return choice
+
+# This function replaces the pawn with the promoted piece
+def promotion():
+    global chessboard
+
+    role = get_user_promotion()
+
+    if selected_piece.color == 'white' :
+        if role == "Queen":
+            chessboard[x][y] = Queen(selected_piece.color, (x, y), True, wqsprite)
+        elif role == "Rook":
+            chessboard[x][y] = Rook(selected_piece.color, (x, y), True, wrsprite)
+        elif role == "Knight":
+            chessboard[x][y] = Knight(selected_piece.color, (x, y), True, wknsprite)
+        elif role == "Bishop":
+            chessboard[x][y] = Bishop(selected_piece.color, (x, y), True, wbsprite)
+            
+    elif selected_piece.color == 'black' and x == 7:
+        if role == "Queen":
+            chessboard[x][y] = Queen(selected_piece.color, (x, y), True, bqsprite)
+        elif role == "Rook":
+            chessboard[x][y] = Rook(selected_piece.color, (x, y), True, brsprite)
+        elif role == "Knight":
+            chessboard[x][y] = Knight(selected_piece.color, (x, y), True, bknsprite)
+        elif role == "Bishop":
+            chessboard[x][y] = Bishop(selected_piece.color, (x, y), True, bbsprite)
+            
+    
+"""
+Game loop
+"""
+
+
 # Main game loop
 def game_loop():
-    global x, y, selected_role, selected_piece, turn_cnt, turn_color, in_check, game_over
+    global x, y, selected_role, selected_piece, turn_cnt, turn_color, in_check, game_over, can_castle, en_passant_timer
     
     game_exit = False
     
@@ -529,13 +673,14 @@ def game_loop():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 game_exit = True
-
+                
             # On user click
             if event.type == pygame.MOUSEBUTTONDOWN:
                 
                 # If the user has selected a piece
                 if selected_role is not None:
                     if (selected_piece.color == turn_color):
+                        
                         moves = chessboard[x][y].valid_moves()
 
                         # Variables necessary when testing for pinned pieces
@@ -553,12 +698,35 @@ def game_loop():
 
                             # Checks if the move would result in a king in check
                             if not would_check(x, y, last_x, last_y, last_status, chessboard):
+                                
+                                # If the move is a king castle, also moves the rook
+                                if selected_piece.role == 'king' and can_castle:
+                                    castle()
+
+                                # If the move is a pawn en passant, also capture the opponent pawn
+                                if selected_piece.role == 'pawn' and (x, y) == en_passant_pos:
+                                    en_passant()
+
+                                # Move the piece
                                 selected_piece.move((x,y))
+                                
+                                # After a move, check if that move enables en passant
+                                if selected_piece.role == 'pawn' and not last_status:
+                                    en_passant_validity()
+
+                                # After a move, check if that move enables promotion
+                                if selected_piece.role == 'pawn' and (x == 0 or x == 7):
+                                    promotion()
+
+                                # After moving the piece, remove selection
                                 selected_role = None
                                 selected_piece = None
 
                                 # After a move, the turn goes to the other player
+                                # Also increment en passant timer, to ensure proper ruling
+                                # En passant is only valid in the subsequent turn after the double pawn move is made
                                 turn_cnt += 1
+                                en_passant_timer += 1
                                 if turn_cnt % 2 == 0:
                                     turn_color = 'white'
                                 else:
@@ -567,8 +735,8 @@ def game_loop():
                                 # After the turn changes, determine whether the king is in check
                                 in_check = is_check(x, y, chessboard)
 
-                                # Check for game end conditions.
-                                # Checkmate happens when the king is in check and the player can not make any moves.
+                                # Check for game end conditions
+                                # Checkmate happens when the king is in check and the player can not make any moves
                                 if in_check and legal_moves(in_check) == 0:
                                     print("Checkmate!")
                                     if turn_cnt % 2 == 0:
@@ -577,7 +745,7 @@ def game_loop():
                                         print("White wins.")
                                     game_over = True
 
-                                # Stalemate happens when the king is not in check, but the player can not make any moves.
+                                # Stalemate happens when the king is not in check, but the player can not make any moves
                                 elif not in_check and legal_moves(in_check) == 0:
                                     print("Stalemate.")
                                     game_over = True
@@ -599,7 +767,11 @@ def game_loop():
                     else:
                         selected_role = None
                         selected_piece = None
-                            
+
+                    # If the user selects and deselects a piece, in_check gets reset to False
+                    # This function call prevents that
+                    in_check = is_check(x, y, chessboard)
+                    
                 # If no piece has been selected, get input until one is
                 else:
                     mouse_coords = pygame.mouse.get_pos()
@@ -607,6 +779,14 @@ def game_loop():
                             
                     selected_role = piece_clicked(x, y)
                     selected_piece = chessboard[x][y]
+
+                    # Check needed to check if the king can castle
+                    # A king may not castle if it is under check
+                    if selected_piece is not None:
+                        if not in_check and not selected_piece.moved:
+                            can_castle = True
+                        else:
+                            can_castle = False
                 
         # Draw the board
         draw_board()
