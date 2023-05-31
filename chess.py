@@ -396,6 +396,45 @@ def draw_circle(row, col, white_color, black_color):
     else:
         pygame.draw.circle(game_display, black_color, (x_pos, y_pos), radius)
 
+# Function for algebraic notation
+def show_text():
+    font_size = 30
+    font = pygame.font.Font(None, font_size)
+
+    text_surface = font.render("1", True, white)
+    game_display.blit(text_surface, (5, 705))
+    text_surface = font.render("2", True, black)
+    game_display.blit(text_surface, (5, 605))
+    text_surface = font.render("3", True, white)
+    game_display.blit(text_surface, (5, 505))
+    text_surface = font.render("4", True, black)
+    game_display.blit(text_surface, (5, 405))
+    text_surface = font.render("5", True, white)
+    game_display.blit(text_surface, (5, 305))
+    text_surface = font.render("6", True, black)
+    game_display.blit(text_surface, (5, 205))
+    text_surface = font.render("7", True, white)
+    game_display.blit(text_surface, (5, 105))
+    text_surface = font.render("8", True, black)
+    game_display.blit(text_surface, (5, 5))
+
+    text_surface = font.render("a", True, white)
+    game_display.blit(text_surface, (85, 780))
+    text_surface = font.render("b", True, black)
+    game_display.blit(text_surface, (185, 780))
+    text_surface = font.render("c", True, white)
+    game_display.blit(text_surface, (285, 780))
+    text_surface = font.render("d", True, black)
+    game_display.blit(text_surface, (385, 780))
+    text_surface = font.render("e", True, white)
+    game_display.blit(text_surface, (485, 780))
+    text_surface = font.render("f", True, black)
+    game_display.blit(text_surface, (585, 780))
+    text_surface = font.render("g", True, white)
+    game_display.blit(text_surface, (685, 780))
+    text_surface = font.render("h", True, black)
+    game_display.blit(text_surface, (785, 780))
+
 # Highlighting valid moves
 def highlight_moves():
     if selected_piece is not None and selected_piece.color == turn_color:
@@ -438,6 +477,8 @@ def draw_board():
     for row in range(board_height):
         for col in range(board_width):
             draw_square(row, col, white, black)
+
+    show_text()      
 
     if (x is not None and y is not None):
         highlight_moves()
